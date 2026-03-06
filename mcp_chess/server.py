@@ -170,6 +170,42 @@ async def new_game(user_plays_white: bool = True) -> str:
         return "Error: Could not reset the board. Server might not be initialized."
 
 @mcp.tool()
+async def get_fen() -> str:
+    """Returns the current board position as a FEN string."""
+    global board
+    if board:
+        return board.fen()
+    logger.warning("Board not available in get_fen")
+    return chess.STARTING_FEN
+
+@mcp.tool()
+async def set_fen(fen: str, user_plays_white: bool = True) -> str:
+    """
+    Sets the board to a specific position using a FEN string.
+    Useful for restoring a saved game or analyzing a specific position.
+
+    Args:
+        fen: A valid FEN string representing the board position.
+        user_plays_white: Whether the user plays as white. Defaults to True.
+
+    Returns:
+        A confirmation message with the new board FEN.
+    """
+    global board, user_color
+    if not board:
+        board = chess.Board()
+
+    try:
+        board.set_fen(fen)
+    except ValueError as e:
+        logger.error(f"Invalid FEN: {fen} — {e}")
+        return f"Error: Invalid FEN string — {e}"
+
+    user_color = chess.WHITE if user_plays_white else chess.BLACK
+    logger.info(f"Board set to FEN: {fen}. User plays {'white' if user_plays_white else 'black'}.")
+    return f"Position loaded. FEN: {board.fen()}. You are playing as {'white' if user_plays_white else 'black'}."
+
+@mcp.tool()
 async def find_position_in_pgn(pgn_string: str, condition: str) -> dict | str:
     """
     Finds the first board position in a PGN string that matches a given condition
