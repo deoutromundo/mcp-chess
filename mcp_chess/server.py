@@ -210,12 +210,14 @@ async def set_fen(fen: str, user_plays_white: bool = True) -> str:
 
 STOCKFISH_PATH = os.environ.get("STOCKFISH_PATH", "/usr/local/bin/stockfish")
 
-# Difficulty → Stockfish Skill Level (0-20) and time limit
+# Difficulty levels using UCI_LimitStrength + UCI_Elo for precise control.
+# Easy/Normal/Hard use ELO-based limiting for natural "human-like" play.
+# Ultra uses Skill Level 20 WITHOUT UCI_LimitStrength = full engine power (~3500+ ELO).
 DIFFICULTY_MAP = {
-    "easy":   {"skill": 1,  "time": 0.05},
-    "normal": {"skill": 8,  "time": 0.2},
-    "hard":   {"skill": 16, "time": 0.5},
-    "ultra":  {"skill": 20, "time": 1.0},
+    "easy":   {"limit_strength": True,  "elo": 1320, "time": 0.1},
+    "normal": {"limit_strength": True,  "elo": 1500, "time": 0.3},
+    "hard":   {"limit_strength": True,  "elo": 2200, "time": 0.5},
+    "ultra":  {"limit_strength": False, "skill": 20, "time": 1.0},
 }
 
 @mcp.tool()
@@ -239,7 +241,13 @@ async def get_engine_move(difficulty: str = "normal") -> dict:
 
     try:
         transport, engine = await chess.engine.popen_uci(STOCKFISH_PATH)
-        await engine.configure({"Skill Level": params["skill"]})
+        if params.get("limit_strength"):
+            await engine.configure({
+                "UCI_LimitStrength": True,
+                "UCI_Elo": params["elo"],
+            })
+        else:
+            await engine.configure({"Skill Level": params.get("skill", 20)})
         result = await engine.play(board, chess.engine.Limit(time=params["time"]))
         await engine.quit()
     except Exception as e:
