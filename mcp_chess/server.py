@@ -1,4 +1,7 @@
+import os
+
 import chess
+import chess.engine
 import chess.svg
 import chess.pgn
 import cairosvg
@@ -204,6 +207,52 @@ async def set_fen(fen: str, user_plays_white: bool = True) -> str:
     user_color = chess.WHITE if user_plays_white else chess.BLACK
     logger.info(f"Board set to FEN: {fen}. User plays {'white' if user_plays_white else 'black'}.")
     return f"Position loaded. FEN: {board.fen()}. You are playing as {'white' if user_plays_white else 'black'}."
+
+STOCKFISH_PATH = os.environ.get("STOCKFISH_PATH", "/usr/local/bin/stockfish")
+
+# Difficulty → Stockfish Skill Level (0-20) and time limit
+DIFFICULTY_MAP = {
+    "easy":   {"skill": 1,  "time": 0.05},
+    "normal": {"skill": 8,  "time": 0.2},
+    "hard":   {"skill": 16, "time": 0.5},
+    "ultra":  {"skill": 20, "time": 1.0},
+}
+
+@mcp.tool()
+async def get_engine_move(difficulty: str = "normal") -> dict:
+    """
+    Get the best move from Stockfish engine for the current position.
+
+    Args:
+        difficulty: One of 'easy', 'normal', 'hard', 'ultra'. Controls engine strength.
+
+    Returns:
+        A dictionary with the move in SAN and UCI format, or an error.
+    """
+    global board
+    if not board:
+        return {"error": "Board not initialized."}
+    if board.is_game_over():
+        return {"error": "Game is already over.", "result": board.result()}
+
+    params = DIFFICULTY_MAP.get(difficulty.lower(), DIFFICULTY_MAP["normal"])
+
+    try:
+        transport, engine = await chess.engine.popen_uci(STOCKFISH_PATH)
+        await engine.configure({"Skill Level": params["skill"]})
+        result = await engine.play(board, chess.engine.Limit(time=params["time"]))
+        await engine.quit()
+    except Exception as e:
+        logger.error("Stockfish error: %s", e, exc_info=True)
+        return {"error": f"Engine error: {e}"}
+
+    if not result.move:
+        return {"error": "Engine returned no move."}
+
+    move_san = board.san(result.move)
+    move_uci = result.move.uci()
+    return {"move_san": move_san, "move_uci": move_uci}
+
 
 @mcp.tool()
 async def find_position_in_pgn(pgn_string: str, condition: str) -> dict | str:
